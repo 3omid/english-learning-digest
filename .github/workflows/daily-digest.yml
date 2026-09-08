@@ -1,0 +1,93 @@
+name: English Learning Digest
+
+on:
+  schedule:
+    # ساعت ۸ صبح و ۵ عصر به وقت تورنتو (EDT = UTC-4). نکته: بعد از پایان DST آمریکای
+    # شمالی (اول نوامبر)، تورنتو به EST (UTC-5) برمی‌گرده و این دو زمان یک ساعت زودتر
+    # (۷ صبح و ۴ عصر) اجرا می‌شن - چون کرون گیت‌هاب همیشه UTC خامه و خودکار با DST
+    # هماهنگ نمی‌شه. اگه لازم شد، این دو عدد رو دستی یک ساعت عقب/جلو کن.
+    - cron: "0 12,21 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "حتی بدون مطلب تازه هم گزارش بساز"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore seen_content.db (cache)
+        uses: actions/cache@v4
+        with:
+          path: seen_content.db
+          key: seen-content-db-${{ github.run_id }}
+          restore-keys: |
+            seen-content-db-
+
+      - name: Run digest (scheduled)
+        if: github.event_name == 'schedule'
+        env:
+          MODEL_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python main.py --force
+
+      - name: Run digest (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          MODEL_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then
+            ARGS="--force"
+          fi
+          python main.py $ARGS
+
+      - name: Upload report as artifact (دانلود دستی از تب Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: english-digest-${{ github.run_id }}
+          path: output/
+
+      - name: Prepare GitHub Pages files
+        run: |
+          mkdir -p pages_output
+          cp output/latest.html pages_output/index.html
+          cp -r assets pages_output/assets
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages_output
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
