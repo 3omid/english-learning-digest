@@ -72,7 +72,6 @@ def fetch_all(db_path: str = None):
     """
     db_path = db_path or config.DB_PATH
     conn = _init_db(db_path)
-    display_cutoff = datetime.now(timezone.utc) - timedelta(hours=config.DISPLAY_LOOKBACK_HOURS)
     notify_cutoff = datetime.now(timezone.utc) - timedelta(hours=config.NOTIFY_LOOKBACK_HOURS)
 
     results = {sec: [] for sec in config.RSS_SOURCES}
@@ -94,9 +93,14 @@ def fetch_all(db_path: str = None):
                     if not title:
                         continue
 
+                    # نکته مهم: برخلاف fetch_news.py سایت خبری (که خبر قدیمی‌تر از
+                    # DISPLAY_LOOKBACK_HOURS رو کامل حذف می‌کنه)، اینجا هیچ فیلتر سن‌محور
+                    # روی نمایش نمی‌ذاریم. دلیل: منابع آموزش زبان (خصوصا Everyday Grammar
+                    # و Education Tips خودِ VOA) گاهی ماه‌ها بین دو پست فاصله می‌افتن؛ یک
+                    # نکته‌ی گرامری/نوشتاری خوب هم بر خلاف خبر، با گذشت زمان "کهنه" نمی‌شه.
+                    # فیلتر سن‌محور قبلا (DISPLAY_LOOKBACK_HOURS کوتاه) باعث می‌شد این ۳ بخش
+                    # همیشه خالی بمونن چون تنها پستِ در دسترس‌شون قدیمی‌تر از بازه بود.
                     pub_time = _parse_entry_time(entry)
-                    if pub_time and pub_time < display_cutoff:
-                        continue
 
                     cid = _content_id(link, title)
                     if cid in assigned_ids:
