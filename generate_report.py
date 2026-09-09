@@ -8,6 +8,7 @@
 import base64
 import html as html_lib
 import os
+import re
 from datetime import datetime, timezone
 
 import config
@@ -72,7 +73,7 @@ def _tip_card_html(section: str, tip: dict) -> str:
 
 def _render_lesson_item(it: dict, accent_color: str, number: int) -> str:
     title_fa = it.get("title_fa", "").strip()
-    explain_fa = it.get("explain_fa", "").strip()
+    lesson_fa = it.get("lesson_fa", "").strip()
     new_badge = '<span class="badge-new">جدید</span>' if it.get("is_new") else ""
     title_html = (
         f'<span class="title-fa">{html_lib.escape(title_fa)}</span>'
@@ -80,16 +81,31 @@ def _render_lesson_item(it: dict, accent_color: str, number: int) -> str:
         if title_fa else
         f'<span class="title-fa" dir="ltr">{html_lib.escape(it["title"])}</span>'
     )
-    explain_html = f'<div class="lesson-explain">{html_lib.escape(explain_fa)}</div>' if explain_fa else ""
+    # lesson_fa می‌تونه چندخطی باشه (توضیح اصلی + مثال‌ها) - هر خط یک پاراگراف جدا می‌شه تا
+    # خودِ درس روی همین صفحه کامل خونده بشه، بدون نیاز به کلیک روی لینک منبع.
+    if lesson_fa:
+        paragraphs = [p.strip() for p in lesson_fa.split("\n") if p.strip()]
+        lesson_html = '<div class="lesson-body">' + "".join(
+            f"<p>{html_lib.escape(p)}</p>" for p in paragraphs
+        ) + "</div>"
+    else:
+        # اگه ترجمه/تحلیل هوش مصنوعی هنوز انجام نشده (مثلا خطای موقت API)، لااقل خلاصه‌ی
+        # خام انگلیسیِ خودِ منبع رو نشون بده تا صفحه کاملا خالی از محتوا نباشه.
+        raw_summary = re.sub(r"<[^>]+>", " ", it.get("summary", "") or "")
+        raw_summary = re.sub(r"\s+", " ", raw_summary).strip()
+        lesson_html = (
+            f'<div class="lesson-body lesson-fallback"><p dir="ltr">{html_lib.escape(raw_summary)}</p></div>'
+            if raw_summary else ""
+        )
     return f"""
     <div class="news-item" style="border-right-color:{accent_color};">
       <div class="news-num" style="background:{accent_color};">{number}</div>
       <div class="news-body">
         <div class="news-source">{html_lib.escape(it['source'])}{new_badge}</div>
         <div class="news-title">{title_html}</div>
-        {explain_html}
+        {lesson_html}
         <div class="news-actions">
-          <a class="news-link" href="{it['link']}" target="_blank">مشاهده مطلب اصلی ←</a>
+          <a class="news-link" href="{it['link']}" target="_blank">منبع اصلی (انگلیسی) - برای مطالعه‌ی بیشتر ←</a>
         </div>
       </div>
     </div>
@@ -241,9 +257,13 @@ def build_report(section_data: dict, tips: dict, quiz: dict = None, output_dir: 
   .badge-new {{ display: inline-block; background: var(--up); color: #fff; font-size: 9.5px; padding: 1px 7px; border-radius: 20px; margin-right: 6px; font-weight: 600; }}
   .news-title {{ font-weight: 700; font-size: 14.5px; line-height: 1.6; }}
   .title-orig {{ display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 2px; }}
-  .lesson-explain {{ font-size: 12.5px; color: var(--text); margin-top: 5px; background: #f7f8fa; border-radius: 8px; padding: 7px 9px; text-align: justify; text-align-last: right; }}
-  .news-actions {{ margin-top: 6px; }}
-  .news-link {{ font-size: 12px; color: var(--navy); text-decoration: none; font-weight: 600; }}
+  .lesson-body {{ font-size: 13px; color: var(--text); margin-top: 6px; background: #f7f8fa; border-radius: 8px; padding: 9px 11px; }}
+  .lesson-body p {{ margin: 0 0 7px; text-align: justify; text-align-last: right; }}
+  .lesson-body p:last-child {{ margin-bottom: 0; }}
+  .lesson-body.lesson-fallback p {{ text-align: left; text-align-last: left; color: var(--muted); }}
+  .news-actions {{ margin-top: 7px; }}
+  .news-link {{ font-size: 11px; color: var(--muted); text-decoration: none; font-weight: 500; }}
+  .news-link:hover {{ color: var(--navy); text-decoration: underline; }}
   .empty {{ color: var(--muted); font-size: 13px; }}
 
   footer {{ text-align: center; padding: 22px; font-size: 11px; color: var(--muted); }}
@@ -252,7 +272,8 @@ def build_report(section_data: dict, tips: dict, quiz: dict = None, output_dir: 
     body {{ font-size: 16px; }}
     header p {{ font-size: 13.5px; }}
     .note-card, .note-label {{ font-size: 15px; }}
-    .news-link {{ font-size: 13.5px; }}
+    .lesson-body {{ font-size: 14.5px; }}
+    .news-link {{ font-size: 13px; }}
     .count-badge {{ font-size: 12px; }}
   }}
 </style>
@@ -273,8 +294,8 @@ def build_report(section_data: dict, tips: dict, quiz: dict = None, output_dir: 
 </div>
 <footer>
   این صفحه به‌صورت خودکار (۲ بار در روز) از منابع واقعی آموزش زبان (VOA Learning English،
-  Merriam-Webster) به‌علاوه‌ی نکته‌های تولیدشده توسط هوش مصنوعی ساخته می‌شه. برای متن کامل
-  هر درس روی «مشاهده مطلب اصلی» بزن.
+  Merriam-Webster) به‌علاوه‌ی نکته‌های تولیدشده توسط هوش مصنوعی ساخته می‌شه. خودِ درس‌ها همین‌جا
+  کامل نوشته شدن؛ لینک «منبع اصلی» فقط برای وقتیه که خواستی متن انگلیسیِ اصلی رو هم ببینی.
 </footer>
 <script>
 function checkDailyQuiz(btn) {{
