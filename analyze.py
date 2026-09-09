@@ -81,15 +81,30 @@ def _call_claude(system_prompt: str, user_prompt: str, max_tokens: int = 2000) -
     return "\n".join(parts).strip()
 
 
+def _sanitize_invalid_escapes(text: str) -> str:
+    """
+    مدل‌های ضعیف‌تر (خصوصا وقتی متن طولانی‌تر و پر از جمله‌ی نمونه/آپاستروف انگلیسی
+    تولید می‌کنن - مثل lesson_fa) گاهی بک‌اسلش‌های نامعتبر توی JSON می‌ذارن، مثلا
+    don\'t به‌جای don't. این باعث می‌شد json.loads با خطای "Invalid \\escape" کل
+    بخش رو fail کنه و اون بخش فقط با متن خام انگلیسی fallback بشه. اینجا فقط
+    بک‌اسلش‌هایی که escape معتبر JSON نیستن (یعنی بعدشون یکی از "\\/bfnrtu نیومده)
+    رو حذف می‌کنیم، تا یک تایپوی کوچیک مدل کل پاسخ رو خراب نکنه.
+    """
+    return re.sub(r'\\(?!["\\/bfnrtu])', "", text)
+
+
 def _parse_json_block(raw: str):
     raw_clean = raw.replace("```json", "").replace("```", "").strip()
-    try:
-        return json.loads(raw_clean)
-    except (json.JSONDecodeError, ValueError):
-        pass
+
     match = re.search(r"[\{\[].*[\}\]]", raw_clean, re.DOTALL)
-    if match:
-        return json.loads(match.group(0))
+    candidate = match.group(0) if match else raw_clean
+
+    for text in (raw_clean, candidate, _sanitize_invalid_escapes(candidate)):
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
     raise ValueError("پاسخ مدل هیچ بلوک JSON قابل‌شناسایی‌ای نداشت.")
 
 
