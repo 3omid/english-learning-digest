@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timezone
 
 import config
+import tts
 from jalali import format_dual_date
 
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
@@ -58,7 +59,7 @@ def _tip_card_html(section: str, tip: dict) -> str:
     if example_en:
         example_html = f"""
         <div class="example-box">
-          <div class="example-en" dir="ltr">{example_en}</div>
+          <div class="example-en" dir="ltr">{tts.audio_button(tts.speakable(tip.get("example_en", "")))}{example_en}</div>
           {f'<div class="example-fa">{example_fa}</div>' if example_fa else ''}
         </div>
         """
@@ -77,16 +78,16 @@ def _render_lesson_item(it: dict, accent_color: str, number: int) -> str:
     new_badge = '<span class="badge-new">جدید</span>' if it.get("is_new") else ""
     title_html = (
         f'<span class="title-fa">{html_lib.escape(title_fa)}</span>'
-        f'<span class="title-orig" dir="ltr">{html_lib.escape(it["title"])}</span>'
+        f'<span class="title-orig" dir="ltr">{tts.audio_button(it["title"])}{html_lib.escape(it["title"])}</span>'
         if title_fa else
-        f'<span class="title-fa" dir="ltr">{html_lib.escape(it["title"])}</span>'
+        f'<span class="title-fa" dir="ltr">{tts.audio_button(it["title"])}{html_lib.escape(it["title"])}</span>'
     )
     # lesson_fa می‌تونه چندخطی باشه (توضیح اصلی + مثال‌ها) - هر خط یک پاراگراف جدا می‌شه تا
     # خودِ درس روی همین صفحه کامل خونده بشه، بدون نیاز به کلیک روی لینک منبع.
     if lesson_fa:
         paragraphs = [p.strip() for p in lesson_fa.split("\n") if p.strip()]
         lesson_html = '<div class="lesson-body">' + "".join(
-            f"<p>{html_lib.escape(p)}</p>" for p in paragraphs
+            f"<p{tts.ltr_attr(p)}>{tts.audio_button(tts.speakable(p))}{html_lib.escape(p)}</p>" for p in paragraphs
         ) + "</div>"
     else:
         # اگه ترجمه/تحلیل هوش مصنوعی هنوز انجام نشده (مثلا خطای موقت API)، لااقل خلاصه‌ی
@@ -136,16 +137,21 @@ def _quiz_html(quiz: dict = None) -> str:
     explanation = html_lib.escape(quiz.get("explanation", ""))
     correct_index = quiz.get("correct_index", 0)
     section = quiz.get("section", "")
+    # دکمه‌ی شنیدن برای گزینه‌ها، فقط وقتی گزینه‌ها انگلیسی‌ان
+    english_opts = all(re.search(r"[A-Za-z]", o) and not re.search(r"[\u0600-\u06FF]", o) for o in quiz["options"])
+    listen_html = ('<div class="quiz-listen" dir="ltr">' + "".join(
+        tts.audio_button(o, chr(65 + i) + " 🔊") for i, o in enumerate(quiz["options"])) + '</div>') if english_opts else ""
     options_html = "".join(
-        f'<button type="button" class="quiz-option" data-index="{i}" onclick="checkDailyQuiz(this)">{opt}</button>'
+        f'<button type="button" class="quiz-option" dir="auto" data-index="{i}" onclick="checkDailyQuiz(this)">{opt}</button>'
         for i, opt in enumerate(options)
     )
     return f"""
     <div class="note-card blue quiz-box" id="daily-quiz" data-correct="{correct_index}">
       <div class="note-label">🧠 <strong>تست این دوره{f" - {html_lib.escape(section)}" if section else ""}</strong></div>
-      <p class="quiz-question">{question}</p>
+      <p class="quiz-question" dir="auto">{tts.audio_button(tts.speakable(quiz["question"]))}{question}</p>
       <div class="quiz-options">{options_html}</div>
       <div class="quiz-result" id="quiz-result"></div>
+      {listen_html}
       <div class="quiz-explanation" id="quiz-explanation">💡 {explanation}</div>
     </div>
     """
@@ -276,6 +282,8 @@ def build_report(section_data: dict, tips: dict, quiz: dict = None, output_dir: 
     .news-link {{ font-size: 13px; }}
     .count-badge {{ font-size: 12px; }}
   }}
+{tts.PLAYER_CSS}
+.quiz-listen{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}.quiz-listen .say-btn{{width:auto;padding:0 10px;border-radius:99px;font-size:13px}}
 </style>
 </head>
 <body>
@@ -298,6 +306,7 @@ def build_report(section_data: dict, tips: dict, quiz: dict = None, output_dir: 
   کامل نوشته شدن؛ لینک «منبع اصلی» فقط برای وقتیه که خواستی متن انگلیسیِ اصلی رو هم ببینی.
 </footer>
 <script>
+{tts.PLAYER_JS}
 function checkDailyQuiz(btn) {{
   var box = document.getElementById('daily-quiz');
   var correct = parseInt(box.getAttribute('data-correct'), 10);
