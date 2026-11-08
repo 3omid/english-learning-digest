@@ -13,6 +13,7 @@ import config
 import fetch_content
 import analyze
 import generate_report
+import tts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -71,6 +72,13 @@ def main():
 
     log.info("در حال ساخت گزارش HTML...")
     generate_report.build_report(section_data, tips, quiz)
+
+    # صدای انگلیسی طبیعی برای دکمه‌های 🔊 (اگه Kokoro نصب نباشه، صفحه با صدای مرورگر کار می‌کنه)
+    log.info("در حال ساخت صدای انگلیسی...")
+    try:
+        tts.render(config.OUTPUT_DIR)
+    except Exception as e:  # noqa: BLE001 - صدا هیچ‌وقت نباید جلوی انتشار صفحه رو بگیره
+        log.warning(f"ساخت صدا انجام نشد: {e}")
     log.info("گزارش با موفقیت در output/latest.html ساخته شد.")
 
 

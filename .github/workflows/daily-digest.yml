@@ -42,6 +42,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # صدای انگلیسی طبیعی (Kokoro، لهجه‌ی آمریکایی) برای دکمه‌های 🔊. اگه این مرحله خطا بده،
+      # صفحه باز هم ساخته و منتشر می‌شه و دکمه‌ها با صدای مرورگر می‌خونن.
+      - name: Cache voice model and packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/huggingface
+          key: voice-kokoro-v1
+
+      - name: Install the voice (Kokoro)
+        continue-on-error: true
+        run: |
+          which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install kokoro soundfile
+
       - name: Restore seen_content.db (cache)
         uses: actions/cache@v4
         with:
@@ -82,6 +99,7 @@ jobs:
           mkdir -p pages_output
           cp output/latest.html pages_output/index.html
           cp -r assets pages_output/assets
+          if [ -d output/audio ]; then cp -r output/audio pages_output/audio; fi
 
       - name: Upload to GitHub Pages
         uses: actions/upload-pages-artifact@v3
