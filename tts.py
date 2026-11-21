@@ -9,6 +9,7 @@ generate_report هر متن انگلیسی رو با audio_button(text) ثبت �
 """
 
 import hashlib
+import json
 import html as html_lib
 import logging
 import os
@@ -62,20 +63,36 @@ def audio_button(text: str, label: str = "🔊") -> str:
             f'data-text="{html_lib.escape(text)}" onclick="sayIt(this)" aria-label="Listen">{label}</button>')
 
 
-# پخش: اول فایل ضبط‌شده، اگه نبود صدای خودِ مرورگر
+# پخش: اگه فایل ضبط‌شده (Kokoro) هست همون، وگرنه فوری صدای خودِ مرورگر.
+# نکته‌ی آیفون: Safari فقط وقتی صدا رو پخش می‌کنه که speak() مستقیم داخل همون کلیک صدا زده بشه؛
+# برای همین فهرست فایل‌های موجود (audio/index.json) موقع باز شدن صفحه خونده می‌شه و دیگه منتظر
+# خطای فایلِ نبود نمی‌مونیم (که باعث می‌شد روی آیفون هیچ صدایی نیاد).
 PLAYER_JS = """
-let _sayA=null;
+let _sayA=null,_sayFiles=null,_sayVoice=null;
+function _pickVoice(){try{const v=speechSynthesis.getVoices().filter(x=>/^en[-_]US/i.test(x.lang));
+  _sayVoice=v.find(x=>/natural|neural|premium|enhanced|samantha|aria|jenny|ava|allison/i.test(x.name))||v[0]||null}catch(e){}}
+try{_pickVoice();speechSynthesis.onvoiceschanged=_pickVoice}catch(e){}
+fetch('audio/index.json',{cache:'no-cache'}).then(r=>r.ok?r.json():[]).then(k=>{_sayFiles=new Set(k)}).catch(()=>{_sayFiles=new Set()});
+function _sayDone(b){b.classList.remove('playing')}
+function _speak(b){
+  try{const s=window.speechSynthesis;if(!s){_sayDone(b);return}
+    if(s.speaking||s.pending)s.cancel();
+    const u=new SpeechSynthesisUtterance(b.dataset.text);u.lang='en-US';u.rate=.9;if(_sayVoice)u.voice=_sayVoice;
+    u.onend=u.onerror=()=>_sayDone(b);b.classList.add('playing');s.speak(u);
+  }catch(e){_sayDone(b)}}
 function sayIt(b){
-  try{if(_sayA){_sayA.pause();_sayA=null}speechSynthesis.cancel()}catch(e){}
-  const t=b.dataset.text;
-  const fallback=()=>{try{const u=new SpeechSynthesisUtterance(t);u.lang='en-US';u.rate=.9;
-    const v=speechSynthesis.getVoices().filter(x=>/en[-_]US/i.test(x.lang));const best=v.find(x=>/natural|neural|premium|enhanced|samantha|aria|jenny/i.test(x.name))||v[0];if(best)u.voice=best;
-    speechSynthesis.speak(u)}catch(e){}};
+  document.querySelectorAll('.say-btn.playing').forEach(_sayDone);
+  if(_sayA){try{_sayA.pause()}catch(e){}_sayA=null}
+  const key=(b.dataset.src||'').replace(/^.*\\/|\\.mp3$/g,'');
+  if(!_sayFiles||!_sayFiles.has(key)){_speak(b);return}
+  try{if(speechSynthesis.speaking)speechSynthesis.cancel()}catch(e){}
   const a=new Audio(b.dataset.src);_sayA=a;b.classList.add('playing');
-  a.onended=a.onerror=()=>b.classList.remove('playing');
-  a.play().catch(()=>{b.classList.remove('playing');fallback()});
+  a.onended=()=>_sayDone(b);
+  a.onerror=()=>{if(_sayA===a){_sayA=null;_speak(b)}};
+  a.play().catch(()=>{if(_sayA===a){_sayA=null;_speak(b)}});
 }
 """
+
 
 PLAYER_CSS = """
 .say-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin:0 6px;
@@ -121,5 +138,8 @@ def render(output_dir: str) -> int:
             made += 1
         except Exception as e:  # noqa: BLE001 - یک متن خراب نباید بقیه رو متوقف کنه
             log.warning(f"صدا برای «{text[:50]}» ساخته نشد: {e}")
+    done = sorted(k for k in _TEXTS if os.path.exists(os.path.join(audio_dir, f"{k}.mp3")))
+    with open(os.path.join(audio_dir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(done, f)
     log.info(f"{made} فایل صوتی از {len(_TEXTS)} متن انگلیسی ساخته شد.")
     return made
