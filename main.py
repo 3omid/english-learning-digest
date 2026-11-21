@@ -7,7 +7,6 @@
 
 import argparse
 import logging
-from datetime import datetime, timezone
 
 import config
 import fetch_content
